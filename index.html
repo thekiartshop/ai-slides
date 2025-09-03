@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Minimal AI Presentation</title>
+  <link rel="stylesheet" href="https://unpkg.com/reveal.js/dist/reveal.css">
+  <link rel="stylesheet" href="https://unpkg.com/reveal.js/dist/theme/white.css" id="theme">
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .wrap { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    form { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+    input, select, button { padding:10px 12px; border:1px solid #ddd; border-radius:10px; }
+    button { cursor:pointer; }
+    .hint { font-size: 12px; color:#777; margin-top:-6px; }
+    .divider { height:1px; background:#eee; margin:16px 0; }
+    #status { font-size: 13px; color:#666; }
+    .reveal { min-height: 300px; }
+    .slides section h2, .slides section h3 { margin: 0 0 8px; }
+    .slides section ul { margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 style="margin:0 0 8px">Minimal AI Presentation</h1>
+    <div class="hint">Type a topic → AI drafts slides → auto-rendered deck. No login.</div>
+
+    <form id="promptForm">
+      <input id="topic" name="topic" placeholder="e.g., The Future of Solar Energy" required style="flex:1;">
+      <select id="slides" name="slides">
+        <option value="6">6 slides</option>
+        <option value="8" selected>8 slides</option>
+        <option value="10">10 slides</option>
+      </select>
+      <button type="submit">Generate</button>
+      <button type="button" id="printBtn" title="Export PDF (browser print)">Export PDF</button>
+    </form>
+
+    <div id="status"></div>
+    <div class="divider"></div>
+  </div>
+
+  <!-- Reveal container -->
+  <div class="reveal">
+    <div class="slides" id="slidesRoot"></div>
+  </div>
+
+  <script src="https://unpkg.com/reveal.js/dist/reveal.js"></script>
+  <script>
+    const form = document.getElementById('promptForm');
+    const statusEl = document.getElementById('status');
+    const slidesRoot = document.getElementById('slidesRoot');
+    const printBtn = document.getElementById('printBtn');
+
+    function sanitize(text){ return (text||'').replace(/[<>]/g, c => ({'<':'&lt;','>':'&gt;'}[c])); }
+
+    function renderDeck(json) {
+      slidesRoot.innerHTML = "";
+      // Title slide
+      const first = document.createElement('section');
+      first.innerHTML = `<h2>${sanitize(json.title || 'Untitled')}</h2><p>${sanitize(json.subtitle || '')}</p>`;
+      slidesRoot.appendChild(first);
+      // Content slides
+      (json.slides || []).forEach(s => {
+        const sec = document.createElement('section');
+        const heading = s.heading ? `<h3>${sanitize(s.heading)}</h3>` : "";
+        const bullets = (s.bullets || []).map(b => `<li>${sanitize(b)}</li>`).join("");
+        const notes = s.notes ? `<aside class="notes">${sanitize(s.notes)}</aside>` : "";
+        sec.innerHTML = `${heading}${bullets?`<ul>${bullets}</ul>`:""}${notes}`;
+        slidesRoot.appendChild(sec);
+      });
+      // Init Reveal (safe to call multiple times)
+      Reveal.initialize({
+        hash: true,
+        slideNumber: true,
+        transition: 'fade',
+        margin: 0.08
+      });
+    }
+
+    function extractJSON(text) {
+      const match = text.match(/\{[\s\S]*\}$/);
+      try { return JSON.parse(match ? match[0] : text); } catch(e) { return null; }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const topic = document.getElementById('topic').value.trim();
+      const slides = parseInt(document.getElementById('slides').value, 10);
+
+      statusEl.textContent = "Generating…";
+      slidesRoot.innerHTML = "";
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic, slides })
+        });
+        if (!res.ok) throw new Error('API error');
+        const data = await res.json();
+        const json = typeof data === 'string' ? extractJSON(data) : data;
+        if (!json || !json.slides) throw new Error('Invalid AI response');
+        renderDeck(json);
+        statusEl.textContent = "Done.";
+      } catch (err) {
+        statusEl.textContent = "Failed to generate. Open console or check project logs.";
+        console.error(err);
+      }
+    });
+
+    printBtn.addEventListener('click', () => { window.print(); });
+  </script>
+</body>
+</html>
